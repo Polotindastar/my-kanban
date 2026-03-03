@@ -68,8 +68,25 @@ export default function Home() {
     });
   };
 
+  const extractTimeFromText = (text: string) => {
+    // Hledá formáty jako "14:30", "14.30" nebo jen "ve 14"
+    const timeRegex = /(\d{1,2})[:.](\d{2})|ve?\s(\d{1,2})/i;
+    const match = text.match(timeRegex);
+
+    if (match) {
+      if (match[1] && match[2]) {
+        // Formát HH:MM
+        return `${match[1].padStart(2, '0')}:${match[2]}`;
+      } else if (match[3]) {
+        // Formát "ve 14" -> 14:00
+        return `${match[3].padStart(2, '0')}:00`;
+      }
+    }
+    return null;
+  };
+
   // 5. Hlasové ovládání
-  const startListening = () => {
+const startListening = () => {
     const windowAny = window as any;
     const SpeechRec = windowAny.SpeechRecognition || windowAny.webkitSpeechRecognition;
 
@@ -80,9 +97,26 @@ export default function Home() {
 
     const recognition = new SpeechRec();
     recognition.lang = 'cs-CZ';
+    
     recognition.onresult = (event: any) => {
-      setTask(event.results[0][0].transcript);
+      const transcript = event.results[0][0].transcript;
+      
+      // Pokusíme se najít čas v mluveném slově
+      const detectedTime = extractTimeFromText(transcript);
+      
+      if (detectedTime) {
+        setTaskTime(detectedTime);
+        // Odstraníme čas z textu úkolu, aby tam nezavazel (volitelné)
+        const cleanTask = transcript.replace(/(\d{1,2}[:.]\d{2}|ve?\s\d{1,2})/i, "").trim();
+        setTask(cleanTask);
+      } else {
+        setTask(transcript);
+        // Pokud čas nebyl detekován, nastavíme aktuální čas automaticky
+        const now = new Date();
+        setTaskTime(now.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' }));
+      }
     };
+
     recognition.start();
   };
 
