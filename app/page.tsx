@@ -8,14 +8,20 @@ import {
   deleteDoc, doc, updateDoc, serverTimestamp, orderBy 
 } from "firebase/firestore";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
-interface Window {
-SpeechRecognition?: any;
-webkitSpeechRecognition?: any;
+
+// 1. Definice typů pro TypeScript
+declare global {
+  interface Window {
+    SpeechRecognition: any;
+    webkitSpeechRecognition: any;
+  }
 }
+
 interface Task {
   id: string;
   text: string;
   date: string;
+  time?: string;
   status: 'todo' | 'in-progress' | 'done';
 }
 
@@ -29,91 +35,76 @@ export default function Home() {
   const [user, setUser] = useState<User | null>(null);
   const [task, setTask] = useState("");
   const [taskDate, setTaskDate] = useState(new Date().toISOString().split('T')[0]);
+  const [taskTime, setTaskTime] = useState("");
   const [tasks, setTasks] = useState<Task[]>([]);
 
+  // 2. Sledování přihlášení
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
     return () => unsubscribe();
   }, []);
 
+  // 3. Načítání dat
   useEffect(() => {
     if (!user) return;
-    const q = query(collection(db, "tasks"), where("userId", "==", user.uid), orderBy("createdAt", "desc"));
+    const q = query(
+      collection(db, "tasks"), 
+      where("userId", "==", user.uid), 
+      orderBy("createdAt", "desc")
+    );
     return onSnapshot(q, (snapshot) => {
       setTasks(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Task)));
     });
   }, [user]);
 
-  // LOGIKA PŘETAŽENÍ
+  // 4. Logika Drag & Drop
   const onDragEnd = async (result: DropResult) => {
     const { destination, source, draggableId } = result;
+    if (!destination || destination.droppableId === source.droppableId) return;
 
-    if (!destination) return; // Puštěno mimo sloupec
-    if (destination.droppableId === source.droppableId) return; // Puštěno ve stejném sloupci
-
-    // Aktualizace stavu ve Firebase
     const taskDoc = doc(db, "tasks", draggableId);
     await updateDoc(taskDoc, { 
       status: destination.droppableId as Task['status'] 
     });
   };
-const startListening = () => {
 
-const windowAny = window as any;
+  // 5. Hlasové ovládání
+  const startListening = () => {
+    const windowAny = window as any;
+    const SpeechRec = windowAny.SpeechRecognition || windowAny.webkitSpeechRecognition;
 
-const SpeechRecognition = windowAny.SpeechRecognition || windowAny.webkitSpeechRecognition;
+    if (!SpeechRec) {
+      alert("Váš prohlížeč nepodporuje hlasové zadávání.");
+      return;
+    }
 
-if (!SpeechRecognition) {
+    const recognition = new SpeechRec();
+    recognition.lang = 'cs-CZ';
+    recognition.onresult = (event: any) => {
+      setTask(event.results[0][0].transcript);
+    };
+    recognition.start();
+  };
 
-alert("Váš prohlížeč nepodporuje hlasové zadávání.");
-
-return;
-
-}
-
-const recognition = new SpeechRecognition();
-
-recognition.lang = 'cs-CZ';
-
-recognition.start();
-
-recognition.onresult = (event: any) => {
-
-const transcript = event.results[0][0].transcript;
-
-setTask(transcript);
-
-};
-
-};
-
-const processVoiceInput = (text: string) => {
-  let note = text;
-  let dateObj = new Date();
-
-  // Inteligentní parsování data z hlasu
-  if (text.toLowerCase().includes("zítra")) {
-    note = text.replace(/zítra/gi, "").trim();
-    dateObj.setDate(dateObj.getDate() + 1);
-  } else if (text.toLowerCase().includes("pondělí")) {
-    // Jednoduchá ukázka, lze rozšířit
-    note = text.replace(/pondělí/gi, "").trim();
-  }
-
-  setTask(note);
-  setTaskDate(dateObj.toISOString().split('T')[0]);
-};
+  // 6. Odeslání do Firebase
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!task.trim() || !user) return;
-    await addDoc(collection(db, "tasks"), {
-      text: task,
-      date: taskDate,
-      status: 'todo',
-      userId: user.uid,
-      createdAt: serverTimestamp(),
-    });
-    setTask("");
+
+    try {
+      await addDoc(collection(db, "tasks"), {
+        text: task,
+        date: taskDate,
+        time: taskTime,
+        status: 'todo',
+        userId: user.uid,
+        createdAt: serverTimestamp(),
+      });
+      setTask("");
+      setTaskTime("");
+    } catch (err) {
+      console.error("Chyba při ukládání:", err);
+    }
   };
 
   const deleteTask = async (id: string) => {
@@ -121,90 +112,59 @@ const processVoiceInput = (text: string) => {
   };
 
   return (
-    <main className="min-h-screen bg-slate-50 p-4 md:p-8 text-black">
+    <main className="min-h-screen bg-slate-50 p-4 text-black">
       {!user ? (
         <div className="flex flex-col items-center justify-center h-[80vh]">
-          <h1 className="text-5xl font-black mb-6 bg-gradient-to-r from-blue-600 to-teal-500 bg-clip-text text-transparent text-black">
-            KanbanPro ⚡
-          </h1>
-          <button onClick={() => signInWithPopup(auth, googleProvider)} className="bg-slate-900 text-white px-10 py-4 rounded-2xl shadow-2xl font-bold hover:scale-105 transition">
-            Začít s Google účtem
+          <h1 className="text-4xl font-black mb-6 text-blue-600">KanbanPro ⚡</h1>
+          <button 
+            onClick={() => signInWithPopup(auth, googleProvider)} 
+            className="bg-black text-white px-8 py-3 rounded-xl font-bold"
+          >
+            Přihlásit se přes Google
           </button>
         </div>
       ) : (
         <div className="max-w-7xl mx-auto">
-          {/* Header */}
-          <header className="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
-            <h1 className="text-3xl font-black text-slate-800">Moje Tabule</h1>
-<form onSubmit={handleAddTask} className="flex flex-wrap gap-2 bg-white p-2 rounded-2xl shadow-sm border border-gray-100 w-full md:w-auto">
-  <div className="relative flex-1 min-w-[200px]">
-    <input 
-      value={task} 
-      onChange={e => setTask(e.target.value)} 
-      placeholder="Nový úkol nebo hlasem..." 
-      className="w-full p-2 pr-10 outline-none text-black" 
-    />
-    {/* Tlačítko pro hlasové zadávání zpět na scéně */}
-    <button 
-      type="button" 
-      onClick={startListening}
-      className="absolute right-2 top-1/2 -translate-y-1/2 text-xl hover:scale-110 transition grayscale hover:grayscale-0"
-      title="Hlasové zadávání"
-    >
-      🎙️
-    </button>
-  </div>
-  
-  <input 
-    type="date" 
-    value={taskDate} 
-    onChange={e => setTaskDate(e.target.value)} 
-    className="p-2 text-sm border-l text-black outline-none" 
-  />
-  
-  <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold hover:bg-blue-700 transition">
-    +
-  </button>
-</form>
-            <div className="flex items-center gap-4">
-               <span className="text-sm font-bold text-slate-500">{user.displayName}</span>
-               <button onClick={() => signOut(auth)} className="text-red-400 text-xs font-bold hover:underline">Odhlásit</button>
+          <header className="mb-8 flex flex-col gap-4">
+            <div className="flex justify-between items-center">
+              <h1 className="text-2xl font-black">Moje Tabule</h1>
+              <button onClick={() => signOut(auth)} className="text-xs text-red-500 font-bold">Odhlásit</button>
             </div>
+            
+            <form onSubmit={handleAddTask} className="bg-white p-3 rounded-2xl shadow-sm flex flex-wrap gap-2 border">
+              <div className="relative flex-1 min-w-[200px]">
+                <input 
+                  value={task} 
+                  onChange={e => setTask(e.target.value)} 
+                  placeholder="Co je potřeba udělat?" 
+                  className="w-full p-2 pr-10 outline-none" 
+                />
+                <button type="button" onClick={startListening} className="absolute right-2 top-1/2 -translate-y-1/2">🎙️</button>
+              </div>
+              <input type="date" value={taskDate} onChange={e => setTaskDate(e.target.value)} className="p-2 text-sm border-l" />
+              <input type="time" value={taskTime} onChange={e => setTaskTime(e.target.value)} className="p-2 text-sm border-l" />
+              <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold">+</button>
+            </form>
           </header>
 
-          {/* Drag and Drop Area */}
           <DragDropContext onDragEnd={onDragEnd}>
-            <div className="flex flex-col md:flex-row gap-6 items-start">
+            <div className="flex flex-col md:flex-row gap-6">
               {COLUMNS.map(col => (
                 <Droppable key={col.id} droppableId={col.id}>
                   {(provided) => (
-                    <div 
-                      {...provided.droppableProps} 
-                      ref={provided.innerRef}
-                      className={`flex-1 w-full min-h-[500px] ${col.color} rounded-2xl p-4 transition-colors`}
-                    >
-                      <h2 className="text-sm font-black text-slate-400 mb-4 tracking-widest uppercase px-2">
-                        {col.title} ({tasks.filter(t => t.status === col.id).length})
-                      </h2>
-                      
+                    <div {...provided.droppableProps} ref={provided.innerRef} className={`flex-1 min-h-[400px] ${col.color} rounded-2xl p-4`}>
+                      <h2 className="text-xs font-black text-slate-400 mb-4 tracking-widest uppercase">{col.title}</h2>
                       <div className="space-y-3">
                         {tasks.filter(t => t.status === col.id).map((t, index) => (
                           <Draggable key={t.id} draggableId={t.id} index={index}>
                             {(provided) => (
-                              <div
-                                ref={provided.innerRef}
-                                {...provided.draggableProps}
-                                {...provided.dragHandleProps}
-                                className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow group relative"
-                              >
-                                <p className="text-slate-800 font-semibold pr-6">{t.text}</p>
-                                <p className="text-[10px] text-blue-500 font-bold mt-2 uppercase tracking-tight">📅 {t.date}</p>
-                                <button 
-                                  onClick={() => deleteTask(t.id)} 
-                                  className="absolute top-4 right-3 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                                >
-                                  🗑️
-                                </button>
+                              <div ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps} className="bg-white p-4 rounded-xl shadow-sm relative group border">
+                                <p className="font-semibold text-slate-800">{t.text}</p>
+                                <div className="flex gap-3 mt-2 text-[10px] font-bold uppercase">
+                                  <span className="text-blue-500">📅 {t.date}</span>
+                                  {t.time && <span className="text-red-500">⏰ {t.time}</span>}
+                                </div>
+                                <button onClick={() => deleteTask(t.id)} className="absolute top-4 right-3 opacity-0 group-hover:opacity-100 transition-opacity">🗑️</button>
                               </div>
                             )}
                           </Draggable>
