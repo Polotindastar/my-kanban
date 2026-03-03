@@ -8,6 +8,10 @@ import {
   deleteDoc, doc, updateDoc, serverTimestamp, orderBy 
 } from "firebase/firestore";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
+interface Window {
+SpeechRecognition?: any;
+webkitSpeechRecognition?: any;
+}
 interface Task {
   id: string;
   text: string;
@@ -53,21 +57,34 @@ export default function Home() {
       status: destination.droppableId as Task['status'] 
     });
   };
-  const startListening = () => {
-  const SpeechRecognition = window.SpeechRecognition || (window as any).webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    alert("Váš prohlížeč nepodporuje hlasové zadávání.");
-    return;
-  }
+const startListening = () => {
 
-  const recognition = new SpeechRecognition();
-  recognition.lang = 'cs-CZ';
-  recognition.start();
+const windowAny = window as any;
 
-  recognition.onresult = (event: any) => {
-    const transcript = event.results[0][0].transcript;
-    processVoiceInput(transcript); // Tato funkce zpracuje "zítra" atd.
-  };
+const SpeechRecognition = windowAny.SpeechRecognition || windowAny.webkitSpeechRecognition;
+
+if (!SpeechRecognition) {
+
+alert("Váš prohlížeč nepodporuje hlasové zadávání.");
+
+return;
+
+}
+
+const recognition = new SpeechRecognition();
+
+recognition.lang = 'cs-CZ';
+
+recognition.start();
+
+recognition.onresult = (event: any) => {
+
+const transcript = event.results[0][0].transcript;
+
+setTask(transcript);
+
+};
+
 };
 
 const processVoiceInput = (text: string) => {
