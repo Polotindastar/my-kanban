@@ -68,20 +68,28 @@ export default function Home() {
     });
   };
 
-  const extractTimeFromText = (text: string) => {
-    // Hledá formáty jako "14:30", "14.30" nebo jen "ve 14"
-    const timeRegex = /(\d{1,2})[:.](\d{2})|ve?\s(\d{1,2})/i;
-    const match = text.match(timeRegex);
-
-    if (match) {
-      if (match[1] && match[2]) {
-        // Formát HH:MM
-        return `${match[1].padStart(2, '0')}:${match[2]}`;
-      } else if (match[3]) {
-        // Formát "ve 14" -> 14:00
-        return `${match[3].padStart(2, '0')}:00`;
-      }
+const extractTimeFromText = (text: string) => {
+    const t = text.toLowerCase();
+    
+    // 1. Zkusíme najít klasický formát čísel (např. 14:30 nebo 14.30)
+    const digitalMatch = t.match(/(\d{1,2})[:.](\d{2})/);
+    if (digitalMatch) {
+      return `${digitalMatch[1].padStart(2, '0')}:${digitalMatch[2]}`;
     }
+
+    // 2. Zkusíme najít dvě čísla vedle sebe (např. "ve čtrnáct třicet" -> "14 30")
+    // Hledáme dvě skupiny čísel oddělené mezerou
+    const wordsMatch = t.match(/(\d{1,2})\s(\d{2})/);
+    if (wordsMatch) {
+      return `${wordsMatch[1].padStart(2, '0')}:${wordsMatch[2]}`;
+    }
+
+    // 3. Zkusíme najít jen celou hodinu (např. "v deset")
+    const hourMatch = t.match(/ve?\s(\d{1,2})/);
+    if (hourMatch) {
+      return `${hourMatch[1].padStart(2, '0')}:00`;
+    }
+
     return null;
   };
 
@@ -99,7 +107,8 @@ const startListening = () => {
     recognition.lang = 'cs-CZ';
     
     recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
+     let transcript = event.results[0][0].transcript;
+     
       
       // Pokusíme se najít čas v mluveném slově
       const detectedTime = extractTimeFromText(transcript);
@@ -107,7 +116,7 @@ const startListening = () => {
       if (detectedTime) {
         setTaskTime(detectedTime);
         // Odstraníme čas z textu úkolu, aby tam nezavazel (volitelné)
-        const cleanTask = transcript.replace(/(\d{1,2}[:.]\d{2}|ve?\s\d{1,2})/i, "").trim();
+        const cleanTask = transcript.replace(/(\d{1,2}[:.]\d{2}|\d{1,2}\s\d{2}|ve?\s\d{1,2})/i, "").trim();
         setTask(cleanTask);
       } else {
         setTask(transcript);
